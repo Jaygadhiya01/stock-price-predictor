@@ -6,8 +6,6 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-from math import sqrt
-import requests
 
 st.set_page_config(page_title="Stock Predictor", layout="wide")
 st.title("📈 Stock Price Prediction")
@@ -18,15 +16,15 @@ st.markdown("Linear Regression + Time Series | NSE | ")
 # -----------------------
 st.sidebar.header("Stock Settings")
 
-# User enters stock name
+# User enters stock name without .NS
 stock_input = st.sidebar.text_input(
     "Enter NSE Stock Name (e.g., RELIANCE, TCS, INFY)",
     value="RELIANCE"
 )
 
-# Auto append .NS safely (અહીં સુધારો કર્યો છે જેથી બે વાર .NS ના ઉમેરાય)
+# Auto append .NS
 stock = stock_input.upper().strip()
-if stock and not stock.endswith(".NS"):
+if not stock.endswith(".NS"):
     stock += ".NS"
 
 # Years of historical data
@@ -50,29 +48,19 @@ window = st.sidebar.slider(
 # -----------------------
 period = f"{years}y"
 
-
-@st.cache_data(ttl="24h", show_spinner=False)
-def load_data(symbol, period_val):
+@st.cache_data(ttl=3600)  # Cache for 1 hour
+def load_data(symbol, period):
     try:
-        # Custom session બનાવીને User-Agent ઉમેરવો જેથી Yahoo Block ના કરે
-        session = requests.Session()
-        session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        })
-        
-        # session=session પાસ કરવું
-        df = yf.download(symbol, period=period_val, interval="1d", multi_level_column=False, session=session)
-        
-        if df is None or df.empty:
+        df = yf.download(symbol, period=period, interval="1d")
+        if df.empty:
             return None
         return df
-    except Exception:
+    except:
         return None
-        
 
 df = load_data(stock, period)
 
-if df is None or df.empty:
+if df is None:
     st.error("❌ Invalid stock or no data found. Try RELIANCE, TCS, INFY, etc.")
     st.stop()
 
@@ -82,8 +70,7 @@ st.dataframe(df.tail())
 # -----------------------
 # Feature Engineering
 # -----------------------
-data = pd.DataFrame()
-data['Close'] = df['Close']
+data = df[['Close']].copy()
 data['Target'] = data['Close'].shift(-1)
 
 # Lag features
@@ -115,6 +102,7 @@ predictions = model.predict(X_test)
 # -----------------------
 # Metrics
 # -----------------------
+from math import sqrt
 mae = mean_absolute_error(y_test, predictions)
 rmse = sqrt(mean_squared_error(y_test, predictions))
 
@@ -127,7 +115,7 @@ col2.metric("RMSE", f"{rmse:.2f}")
 # Next Day Prediction
 # -----------------------
 latest_features = data[features].iloc[-1].values.reshape(1, -1)
-next_day_price = float(model.predict(latest_features)[0])
+next_day_price = model.predict(latest_features)[0]
 
 st.subheader("🔮 Next Trading Day Prediction")
 st.success(f"Predicted Price: ₹ {next_day_price:.2f}")
@@ -142,6 +130,7 @@ st.info(f"₹ {current_price:.2f}")
 # -----------------------
 # Plot Actual vs Predicted
 # -----------------------
+
 st.subheader("📉 Stock Price Prediction Chart")
 
 fig, ax = plt.subplots(figsize=(14,6))
@@ -152,16 +141,21 @@ ax.plot(y_test.index, y_test.values, label="Actual Price", color="blue", linewid
 # Plot predicted prices
 ax.plot(y_test.index, predictions, label="Predicted Price", color="red", linestyle="--", linewidth=2)
 
-# Next day predicted price point
+# ------------------------
+# Next day predicted price
+# ------------------------
 latest_index = y_test.index[-1]
-ax.scatter(latest_index, next_day_price, color='orange', s=100, zorder=5)  # orange dot
+ax.scatter(latest_index, predictions[-1], color='orange', s=100, zorder=5)  # orange dot
 ax.annotate(f"Next Predicted: ₹{next_day_price:.2f}",
-            xy=(latest_index, next_day_price),
-            xytext=(latest_index, next_day_price+15),
+            xy=(latest_index, predictions[-1]),
+            xytext=(latest_index, predictions[-1]+15),
             fontsize=12, color='orange',
             arrowprops=dict(facecolor='orange', shrink=0.05))
 
-# Current price point
+# ------------------------
+# Current price
+# ------------------------
+current_price = float(df['Close'].iloc[-1])
 ax.scatter(latest_index, current_price, color='green', s=100, zorder=5)  # green dot
 ax.annotate(f"Current: ₹{current_price:.2f}",
             xy=(latest_index, current_price),
@@ -169,13 +163,16 @@ ax.annotate(f"Current: ₹{current_price:.2f}",
             fontsize=12, color='green',
             arrowprops=dict(facecolor='green', shrink=0.05))
 
+# ------------------------
 # Formatting
+# ------------------------
 ax.set_xlabel("Date", fontsize=12)
 ax.set_ylabel("Price (₹)", fontsize=12)
 ax.set_title(f"{stock} | Actual vs Predicted Prices", fontsize=14, fontweight='bold')
 ax.legend(fontsize=12)
 ax.grid(True, linestyle='--', alpha=0.5)
 
+# Make x-axis dates look nice
 ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
 ax.xaxis.set_major_locator(mdates.AutoDateLocator())
 plt.xticks(rotation=45)
