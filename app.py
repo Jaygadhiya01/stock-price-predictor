@@ -7,6 +7,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from math import sqrt
+import requests
 
 st.set_page_config(page_title="Stock Predictor", layout="wide")
 st.title("📈 Stock Price Prediction")
@@ -49,16 +50,25 @@ window = st.sidebar.slider(
 # -----------------------
 period = f"{years}y"
 
-@st.cache_data(ttl=3600)  # Cache for 1 hour
+
+@st.cache_data(ttl="24h", show_spinner=False)
 def load_data(symbol, period_val):
     try:
-        # multi_level_column=False ઉમેરવાથી MultiIndex ઈશ્યૂ સોલ્વ થઈ જશે
-        df = yf.download(symbol, period=period_val, interval="1d", multi_level_column=False)
-        if df.empty:
+        # Custom session બનાવીને User-Agent ઉમેરવો જેથી Yahoo Block ના કરે
+        session = requests.Session()
+        session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        })
+        
+        # session=session પાસ કરવું
+        df = yf.download(symbol, period=period_val, interval="1d", multi_level_column=False, session=session)
+        
+        if df is None or df.empty:
             return None
         return df
-    except Exception as e:
+    except Exception:
         return None
+        
 
 df = load_data(stock, period)
 
